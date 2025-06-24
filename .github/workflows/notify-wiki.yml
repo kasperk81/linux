@@ -1,0 +1,75 @@
+name: Check spacemit-com/linux Wiki Updates
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch:
+
+jobs:
+  check-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v3
+
+      - name: Set up Git
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - name: Clone the wiki
+        run: |
+          git clone https://github.com/spacemit-com/linux.wiki.git wiki
+          cd wiki
+          git log -1 --format="%ct" > ../latest_timestamp.txt
+
+      - name: Read previous timestamp
+        id: read_previous
+        run: |
+          if [ -f .wiki_timestamp ]; then
+            echo "prev=$(cat .wiki_timestamp)" >> $GITHUB_OUTPUT
+          else
+            echo "prev=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compare and open issue if updated
+        id: compare
+        run: |
+          latest=$(cat latest_timestamp.txt)
+          prev=${{ steps.read_previous.outputs.prev }}
+
+          if [ "$latest" -gt "$prev" ]; then
+            echo "Wiki has been updated."
+
+            timestamp=$(date -d @$latest -Iseconds)
+
+            issue_title="spacemit-com/linux/wiki updated at $timestamp"
+            issue_body="The wiki was updated. Latest commit timestamp: $timestamp"
+
+            echo "$latest" > .wiki_timestamp
+
+            echo "title=$issue_title" >> $GITHUB_OUTPUT
+            echo "body=$issue_body" >> $GITHUB_OUTPUT
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "No update detected."
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue
+        if: steps.compare.outputs.updated == 'true'
+        uses: peter-evans/create-issue@v5
+        with:
+          token: ${{ secrets.GH_PAT }}
+          title: ${{ steps.compare.outputs.title }}
+          body: ${{ steps.compare.outputs.body }}
+
+      - name: Save new timestamp
+        if: steps.compare.outputs.updated == 'true'
+        run: |
+          echo "${{ steps.compare.outputs.title }}"  # for logging
+          git fetch
+          echo "${{ steps.compare.outputs.title }}" > .wiki_timestamp
+          git add .wiki_timestamp
+          git commit -m "Update wiki timestamp"
+          git push || echo "Not pushing because no permission or not needed"
