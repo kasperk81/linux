@@ -61,6 +61,8 @@ jobs:
 
       - name: Persist .wiki_timestamp
         if: steps.check.outputs.updated == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git add -f .wiki_timestamp
           git commit -m "chore: record last wiki update timestamp (${{ steps.check.outputs.ts }})"
