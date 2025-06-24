@@ -62,7 +62,7 @@ jobs:
       - name: Persist .wiki_timestamp
         if: steps.check.outputs.updated == 'true'
         run: |
-          git add .wiki_timestamp
+          git add -f .wiki_timestamp
           git commit -m "chore: record last wiki update timestamp (${{ steps.check.outputs.ts }})"
           git push
 
