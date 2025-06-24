@@ -1,75 +1,91 @@
+# .github/workflows/check-wiki-update.yml
 name: Check spacemit-com/linux Wiki Updates
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Every hour
+    - cron: '0 * * * *'   # every hour
   workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   check-wiki:
     runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.check.outputs.updated }}
+      ts:      ${{ steps.check.outputs.ts }}
+
     steps:
       - name: Checkout this repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Git
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
 
-      - name: Clone the wiki
+      - name: Clone the spacemit-com/linux wiki
         run: |
           git clone https://github.com/spacemit-com/linux.wiki.git wiki
           cd wiki
           git log -1 --format="%ct" > ../latest_timestamp.txt
 
-      - name: Read previous timestamp
-        id: read_previous
+      - name: Load previous timestamp (or zero)
+        id: load-prev
         run: |
-          if [ -f .wiki_timestamp ]; then
-            echo "prev=$(cat .wiki_timestamp)" >> $GITHUB_OUTPUT
+          if [[ -f .wiki_timestamp ]]; then
+            echo "prev_ts=$(cat .wiki_timestamp)" >> $GITHUB_OUTPUT
           else
-            echo "prev=0" >> $GITHUB_OUTPUT
+            echo "prev_ts=0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Compare and open issue if updated
-        id: compare
+      - name: Compare timestamps
+        id: check
         run: |
-          latest=$(cat latest_timestamp.txt)
-          prev=${{ steps.read_previous.outputs.prev }}
+          latest_ts=$(cat latest_timestamp.txt)
+          prev_ts=${{ steps.load-prev.outputs.prev_ts }}
 
-          if [ "$latest" -gt "$prev" ]; then
-            echo "Wiki has been updated."
+          echo "latest=$latest_ts"  >> $GITHUB_OUTPUT
+          echo "previous=$prev_ts"  >> $GITHUB_OUTPUT
 
-            timestamp=$(date -d @$latest -Iseconds)
-
-            issue_title="spacemit-com/linux/wiki updated at $timestamp"
-            issue_body="The wiki was updated. Latest commit timestamp: $timestamp"
-
-            echo "$latest" > .wiki_timestamp
-
-            echo "title=$issue_title" >> $GITHUB_OUTPUT
-            echo "body=$issue_body" >> $GITHUB_OUTPUT
-            echo "updated=true" >> $GITHUB_OUTPUT
+          if (( latest_ts > prev_ts )); then
+            ts=$(date -u -d "@$latest_ts" +"%Y-%m-%dT%H:%M:%SZ")
+            echo "updated=true"    >> $GITHUB_OUTPUT
+            echo "ts=$ts"          >> $GITHUB_OUTPUT
+            echo "$latest_ts"      > .wiki_timestamp
           else
-            echo "No update detected."
-            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "updated=false"   >> $GITHUB_OUTPUT
           fi
 
-      - name: Create issue
-        if: steps.compare.outputs.updated == 'true'
-        uses: peter-evans/create-issue@v5
-        with:
-          token: ${{ secrets.GH_PAT }}
-          title: ${{ steps.compare.outputs.title }}
-          body: ${{ steps.compare.outputs.body }}
-
-      - name: Save new timestamp
-        if: steps.compare.outputs.updated == 'true'
+      - name: Persist .wiki_timestamp
+        if: steps.check.outputs.updated == 'true'
         run: |
-          echo "${{ steps.compare.outputs.title }}"  # for logging
-          git fetch
-          echo "${{ steps.compare.outputs.title }}" > .wiki_timestamp
           git add .wiki_timestamp
-          git commit -m "Update wiki timestamp"
-          git push || echo "Not pushing because no permission or not needed"
+          git commit -m "chore: record last wiki update timestamp (${{ steps.check.outputs.ts }})"
+          git push
+
+  create-issue-if-update:
+    needs: check-wiki
+    runs-on: ubuntu-latest
+    if: needs.check-wiki.outputs.updated == 'true'
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Create Issue
+        uses: dacbd/create-issue-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: |
+            spacemit-com/linux/wiki updated at ${{ needs.check-wiki.outputs.ts }}
+          labels: wiki-update
+          body: |
+            The [spacemit-com/linux wiki](https://github.com/spacemit-com/linux/wiki) was updated on **${{ needs.check-wiki.outputs.ts }}**.
+
+            You can view the latest run here:  
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            > *This issue was created automatically by GitHub Actions.*
