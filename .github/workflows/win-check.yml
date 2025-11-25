@@ -1,0 +1,19 @@
+name: List Installed Software
+
+on:
+  workflow_dispatch:
+
+jobs:
+  list_software:
+    runs-on: windows-latest
+
+    steps:
+      - name: List installed software from registry
+        shell: pwsh
+        run: |
+          Write-Host "=== Installed Software (from Registry) ==="
+          Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
+                            HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* |
+            Select-Object DisplayName, DisplayVersion, Publisher, InstallDate |
+            Where-Object { $_.DisplayName } |
+            Sort-Object DisplayName
