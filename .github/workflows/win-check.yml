@@ -8,6 +8,11 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      - name: docker version
+        shell: pwsh
+        run: |
+          docker version --format '{{.Server.Platform.Name}}'
+
       - name: List installed software from registry
         shell: pwsh
         run: |
